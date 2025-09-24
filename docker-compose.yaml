@@ -1,0 +1,66 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.app
+    environment:
+      - OTEL_SERVICE_NAME=go-otel-auto-prof-demo
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
+    volumes:
+      - /proc:/host/proc:ro
+      - app-data:/app
+    depends_on:
+      - pyroscope
+      - otel-collector
+    ports:
+      - "8080:8080"
+
+  go-auto:
+    build:
+      context: ./opentelemetry-go-instrumentation
+      dockerfile: Dockerfile
+    privileged: true
+    pid: "host"
+    depends_on:
+      - app
+    environment:
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
+      - OTEL_GO_AUTO_TARGET_EXE=/app/server
+      - OTEL_SERVICE_NAME=go-otel-auto-prof-demo
+      - OTEL_PROFILER_ENABLED=true
+    volumes:
+      - /proc:/host/proc:ro
+      - app-data:/app
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.102.0
+    command: ["--config=/etc/otelcol/config.yaml"]
+    volumes:
+      - ./otel-collector-config.yaml:/etc/otelcol/config.yaml
+    ports:
+      - "4318:4318"   # OTLP HTTP receiver
+      - "8888:8888"
+      - "13133:13133"
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.60
+    ports:
+      - "16686:16686" # Jaeger UI
+      - "14268:14268" # Collector
+      - "4317:4317"   # OTLP/gRPC
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+
+  pyroscope:
+    image: pyroscope/pyroscope:latest
+    container_name: pyroscope
+    ports:
+      - "4040:4040" # Pyroscope UI
+    command:
+      - server
+    volumes:
+      - pyroscope-data:/var/lib/pyroscope
+
+volumes:
+  app-data:
+  pyroscope-data:
